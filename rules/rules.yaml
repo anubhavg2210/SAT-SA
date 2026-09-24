@@ -1,0 +1,33 @@
+version: "1.0"
+
+rules:
+
+  - id: "EVIDENCE_MISSING"
+    name: "Missing Evidence"
+    category: "evidence"
+    severity: "medium"
+    condition:
+      field: "evidence_count"
+      operator: "eq"
+      value: 0
+    message: "No supporting evidence is recorded for the case."
+
+  - id: "INVESTIGATION_NOT_DOCUMENTED"
+    name: "Investigation Documentation Missing"
+    category: "documentation"
+    severity: "medium"
+    condition:
+      field: "has_investigation_notes"
+      operator: "eq"
+      value: false
+    message: "Investigation notes are not available."
+
+  - id: "ROOT_CAUSE_MISSING"
+    name: "Root Cause Missing"
+    category: "documentation"
+    severity: "low"
+    condition:
+      field: "has_root_cause"
+      operator: "eq"
+      value: false
+    message: "Root-cause information is not recorded."
