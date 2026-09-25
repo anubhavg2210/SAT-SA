@@ -22,3 +22,7 @@ data/private/*
 
 # ML generated artifacts
 ml/models/*.joblib
+data/uploads/
+.venv/
+__pycache__/
+*.pyc
