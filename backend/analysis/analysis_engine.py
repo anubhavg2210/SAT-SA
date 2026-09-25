@@ -4,6 +4,9 @@ from backend.analysis.detector_registry import (
 )
 from backend.analysis.confidence_engine import ConfidenceEngine
 from backend.analysis.signal_fusion_engine import SignalFusionEngine
+from backend.analysis.supervisory_signal_catalog import (
+    SIGNAL_CATALOG,
+)
 
 
 class AnalysisEngine:
@@ -12,6 +15,33 @@ class AnalysisEngine:
         self.data = data
         self.confidence = ConfidenceEngine()
         self.fusion = SignalFusionEngine(data)
+
+    def _enrich_signal(self, signal):
+        signal = dict(signal)
+
+        signal_code = signal.get(
+            "signal_code",
+            "UNKNOWN",
+        )
+
+        metadata = SIGNAL_CATALOG.get(
+            signal_code
+        )
+
+        if metadata:
+            signal["supervisory_dimension"] = (
+                metadata["dimension"]
+            )
+
+            signal["signal_category"] = (
+                metadata["category"]
+            )
+
+            signal["evidence_sources"] = (
+                metadata["evidence_sources"]
+            )
+
+        return signal
 
     def analyze_case(self, case_id):
         signals = []
@@ -25,7 +55,11 @@ class AnalysisEngine:
             result = detector.analyze_case(case_id)
 
             signals.extend(
-                result.get("signals", [])
+                self._enrich_signal(signal)
+                for signal in result.get(
+                    "signals",
+                    [],
+                )
             )
 
         # -------------------------
@@ -37,11 +71,19 @@ class AnalysisEngine:
 
         fused_signals = [
             signal
-            for signal in fusion_result.get("signals", [])
-            if signal.get("signal_code") == "FUSED_FINDING"
+            for signal in fusion_result.get(
+                "signals",
+                [],
+            )
+            if signal.get(
+                "signal_code"
+            ) == "FUSED_FINDING"
         ]
 
-        signals.extend(fused_signals)
+        signals.extend(
+            self._enrich_signal(signal)
+            for signal in fused_signals
+        )
 
         # -------------------------
         # Confidence
@@ -75,7 +117,11 @@ class AnalysisEngine:
             result = detector.analyze()
 
             dataset_signals.extend(
-                result.get("signals", [])
+                self._enrich_signal(signal)
+                for signal in result.get(
+                    "signals",
+                    [],
+                )
             )
 
         # -------------------------
@@ -86,13 +132,13 @@ class AnalysisEngine:
         for signal in dataset_signals:
             signal_code = signal.get(
                 "signal_code",
-                "UNKNOWN"
+                "UNKNOWN",
             )
 
             signal_summary[signal_code] = (
                 signal_summary.get(
                     signal_code,
-                    0
+                    0,
                 ) + 1
             )
 
@@ -101,7 +147,9 @@ class AnalysisEngine:
         top_anomalies = dataset_signals[:50]
 
         return {
-            "total_signals": len(dataset_signals),
+            "total_signals": len(
+                dataset_signals
+            ),
             "signal_summary": signal_summary,
             "dataset_signals": dataset_signals,
             "top_anomalies": top_anomalies,
@@ -124,21 +172,27 @@ class AnalysisEngine:
                 str(case_id)
             )
 
-            signal_count = result["signal_count"]
+            signal_count = result[
+                "signal_count"
+            ]
 
-            total_case_signals += signal_count
+            total_case_signals += (
+                signal_count
+            )
 
             # Count case-level signals
             for signal in result["signals"]:
                 signal_code = signal.get(
                     "signal_code",
-                    "UNKNOWN"
+                    "UNKNOWN",
                 )
 
-                case_signal_summary[signal_code] = (
+                case_signal_summary[
+                    signal_code
+                ] = (
                     case_signal_summary.get(
                         signal_code,
-                        0
+                        0,
                     ) + 1
                 )
 
@@ -149,7 +203,9 @@ class AnalysisEngine:
         # -------------------------
         # Dataset-level analysis
         # -------------------------
-        dataset_result = self.analyze_dataset()
+        dataset_result = (
+            self.analyze_dataset()
+        )
 
         # -------------------------
         # Final summary
@@ -160,23 +216,30 @@ class AnalysisEngine:
                 case_results
             ),
             "cases_without_anomalies": (
-                len(cases) - len(case_results)
+                len(cases)
+                - len(case_results)
             ),
             "total_case_signals": (
                 total_case_signals
             ),
             "total_dataset_signals": (
-                dataset_result["total_signals"]
+                dataset_result[
+                    "total_signals"
+                ]
             ),
             "total_signals": (
                 total_case_signals
-                + dataset_result["total_signals"]
+                + dataset_result[
+                    "total_signals"
+                ]
             ),
             "case_signal_summary": (
                 case_signal_summary
             ),
             "dataset_signal_summary": (
-                dataset_result["signal_summary"]
+                dataset_result[
+                    "signal_summary"
+                ]
             ),
         }
 
@@ -188,5 +251,7 @@ class AnalysisEngine:
             "case_results": case_results,
 
             # Layer 3
-            "dataset_analysis": dataset_result,
+            "dataset_analysis": (
+                dataset_result
+            ),
         }
