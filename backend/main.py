@@ -9,6 +9,7 @@ from backend.ingestion.dataset_loader import (
 )
 
 from backend.analysis.analysis_engine import AnalysisEngine
+from backend.analysis.case_analysis_engine import CaseAnalysisEngine
 
 
 app = FastAPI(title="SAT-SA")
@@ -147,7 +148,6 @@ def analyze_all():
 
     return engine.analyze_all()    
 
-
 @app.get("/analyze/{case_id}")
 def analyze_case(case_id: str):
     upload_dir = Path("data/uploads")
@@ -177,5 +177,12 @@ def analyze_case(case_id: str):
         )
 
     engine = AnalysisEngine(data)
+    case_engine = CaseAnalysisEngine(data)
 
-    return engine.analyze_case(case_id)
+    analysis_result = engine.analyze_case(case_id)
+    case_context = case_engine.analyze_case(case_id)
+
+    return {
+        "case": case_context,
+        "analysis": analysis_result,
+    }
