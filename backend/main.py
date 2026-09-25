@@ -2,6 +2,10 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from pathlib import Path
 import shutil
+from backend.analysis.case_analysis_engine import CaseAnalysisEngine
+from fastapi.middleware.cors import CORSMiddleware
+
+from backend.api.analysis_routes import router as analysis_router
 
 from backend.ingestion.dataset_loader import (
     load_csv_files,
@@ -13,6 +17,17 @@ from backend.analysis.case_analysis_engine import CaseAnalysisEngine
 
 
 app = FastAPI(title="SAT-SA")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(analysis_router)
 
 
 class CaseData(BaseModel):

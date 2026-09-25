@@ -8,8 +8,7 @@ class ExecutionGapDetector:
         cases = self.data["cases"]
 
         case_rows = cases[
-            cases["case_id"].astype(str)
-            == str(case_id)
+            cases["case_id"].astype(str) == str(case_id)
         ]
 
         if case_rows.empty:
@@ -21,40 +20,57 @@ class ExecutionGapDetector:
 
         signals = []
 
-        # --------------------------------
-        # Escalation execution gap
-        # --------------------------------
+        # ==================================================
+        # 1. ESCALATION GAP
+        # ==================================================
+
         escalation_required = str(
             case.get("escalation_required", "")
-        ).upper()
+        ).strip().upper()
 
         if escalation_required == "YES":
 
             escalations = self._find_records(
                 "escalations",
-                case_id,
+                case_id
             )
 
             if not escalations:
+
                 signals.append({
                     "signal_code": "ESCALATION_GAP",
+
+                    "case_id": str(case_id),
+
                     "description": (
                         "Escalation was required but "
                         "no corresponding escalation "
                         "record was found."
-                    ),
+                    )
                 })
 
+       
+
+        # ==================================================
+        # RETURN
+        # ==================================================
+
         return {
-            "case_id": case_id,
+            "case_id": str(case_id),
+
             "signals": signals,
-            "signal_count": len(signals),
+
+            "signal_count": len(signals)
         }
+
+    # ======================================================
+    # HELPER
+    # ======================================================
 
     def _find_records(
         self,
         dataset_name,
-        case_id,
+        case_id
     ):
 
         if dataset_name not in self.data:
