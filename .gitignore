@@ -26,3 +26,5 @@ data/uploads/
 .venv/
 __pycache__/
 *.pyc
+baseline_summary.txt
+analysis_result.json
