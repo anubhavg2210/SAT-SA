@@ -1,25 +1,42 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-function Assessment({ onBack, onAnalysisComplete }) {
+const REQUIRED_FILES = [
+  "cases.csv",
+  "alerts.csv",
+  "investigations.csv",
+  "escalations.csv",
+  "evidence.csv",
+  "events.csv",
+  "assets.csv",
+];
+
+function Assessment({ onAnalysisComplete }) {
+  const inputRef = useRef(null);
+
   const [files, setFiles] = useState([]);
-  const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  const handleFileChange = (event) => {
-    const selectedFiles = Array.from(event.target.files);
+  function handleFiles(selectedFiles) {
+    const csvFiles = Array.from(selectedFiles).filter((file) =>
+      file.name.toLowerCase().endsWith(".csv")
+    );
 
-    setFiles(selectedFiles);
-    setStatus("");
-  };
+    setFiles(csvFiles);
+    setMessage("");
+    setError("");
+  }
 
-  const startAnalysis = async () => {
-    if (files.length === 0) {
-      setStatus("Please upload at least one dataset.");
+  async function handleUpload() {
+    if (!files.length) {
+      setError("Please select CSV files first.");
       return;
     }
 
-    setLoading(true);
-    setStatus("Uploading datasets and starting analysis...");
+    setUploading(true);
+    setError("");
+    setMessage("");
 
     try {
       const formData = new FormData();
@@ -28,182 +45,233 @@ function Assessment({ onBack, onAnalysisComplete }) {
         formData.append("files", file);
       });
 
-      const response = await fetch(
-        "http://127.0.0.1:8000/api/analyze",
+      const uploadResponse = await fetch(
+        "http://127.0.0.1:8000/upload",
         {
           method: "POST",
           body: formData,
         }
       );
 
-      if (!response.ok) {
-        throw new Error("Analysis request failed.");
+      const uploadData = await uploadResponse.json();
+
+      if (!uploadResponse.ok) {
+        throw new Error(
+          uploadData.detail || "Upload failed."
+        );
       }
 
-      const result = await response.json();
+      if (uploadData.dataset_status !== "ready") {
+        setMessage(
+          `Dataset status: ${uploadData.dataset_status}`
+        );
 
-      setStatus("Analysis completed successfully.");
+        if (uploadData.missing_files?.length) {
+          setError(
+            `Missing files: ${uploadData.missing_files.join(", ")}`
+          );
+        }
 
-      onAnalysisComplete(result);
+        return;
+      }
 
-    } catch (error) {
-      setStatus(
-        "Unable to start analysis. Please check the backend."
+      setMessage(
+        "Dataset uploaded successfully. Running full analysis..."
+      );
+
+      const analysisResponse = await fetch(
+        "http://127.0.0.1:8000/api/analysis"
+      );
+
+      const analysisData =
+        await analysisResponse.json();
+
+      if (!analysisResponse.ok) {
+        throw new Error(
+          analysisData.detail ||
+            "Analysis failed."
+        );
+      }
+
+      setMessage(
+        "Analysis completed successfully."
+      );
+
+      if (onAnalysisComplete) {
+        onAnalysisComplete(analysisData);
+      }
+    } catch (err) {
+      setError(
+        err.message || "Something went wrong."
       );
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
-  };
+  }
+
+  const uploadedNames = new Set(
+    files.map((file) => file.name)
+  );
 
   return (
     <div className="assessment-page">
 
       <div className="page-heading">
-
         <div>
           <span className="eyebrow">
-            NEW ASSESSMENT
+            DATA INGESTION
           </span>
 
-          <h2>Upload Security Datasets</h2>
+          <h2>
+            Upload Assessment Dataset
+          </h2>
 
           <p>
-            Upload the datasets required for SAT-SA
-            supervisory analysis.
+            Upload the security-operation CSV files
+            to begin the supervisory assessment.
           </p>
         </div>
-
-        <button
-          className="secondary-button"
-          onClick={onBack}
-        >
-          ← Back
-        </button>
-
       </div>
-
 
       <section className="upload-panel">
 
-        <div className="upload-header">
-
-          <div>
-            <span className="eyebrow">
-              DATA INGESTION
-            </span>
-
-            <h3>Assessment Dataset</h3>
-
-            <p>
-              Select CSV files containing cases, events,
-              investigations, evidence and related records.
-            </p>
-          </div>
-
-        </div>
-
-
-        <label className="upload-box">
-
-          <input
-            type="file"
-            multiple
-            accept=".csv,.xlsx,.json"
-            onChange={handleFileChange}
-          />
-
+        <div
+          className="upload-dropzone"
+          onClick={() => inputRef.current?.click()}
+        >
           <div className="upload-icon">
             +
           </div>
 
-          <strong>
-            Select dataset files
-          </strong>
+          <h3>
+            Upload CSV files
+          </h3>
 
-          <span>
-            CSV, XLSX or JSON
-          </span>
+          <p>
+            Select multiple CSV files at once.
+          </p>
 
-        </label>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={(event) => {
+              event.stopPropagation();
+              inputRef.current?.click();
+            }}
+          >
+            Choose Files
+          </button>
 
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".csv"
+            multiple
+            hidden
+            onChange={(event) =>
+              handleFiles(event.target.files)
+            }
+          />
+        </div>
 
-        {files.length > 0 && (
+        <div className="required-files">
 
-          <div className="selected-files">
-
-            <div className="selected-files-header">
-              <strong>
-                Selected Files
-              </strong>
-
-              <span>
-                {files.length} file(s)
+          <div className="panel-heading">
+            <div>
+              <span className="eyebrow">
+                REQUIRED DATA
               </span>
+
+              <h3>
+                Assessment Files
+              </h3>
             </div>
 
-            {files.map((file) => (
+            <span className="panel-note">
+              {files.length} selected
+            </span>
+          </div>
 
-              <div
-                className="file-row"
-                key={file.name}
-              >
+          <div className="file-check-list">
 
-                <div>
+            {REQUIRED_FILES.map((filename) => {
+
+              const present =
+                uploadedNames.has(filename);
+
+              return (
+                <div
+                  className={`file-check ${
+                    present ? "present" : ""
+                  }`}
+                  key={filename}
+                >
+                  <span>
+                    {present ? "✓" : "○"}
+                  </span>
+
                   <strong>
-                    {file.name}
+                    {filename}
                   </strong>
 
-                  <span>
-                    {(file.size / 1024).toFixed(1)} KB
-                  </span>
+                  <small>
+                    {present
+                      ? "Selected"
+                      : "Required"}
+                  </small>
                 </div>
+              );
+            })}
 
-                <span className="file-status">
-                  Ready
-                </span>
+          </div>
 
+        </div>
+
+        {files.length > 0 && (
+          <div className="selected-files">
+
+            <span className="eyebrow">
+              SELECTED FILES
+            </span>
+
+            {files.map((file) => (
+              <div
+                className="selected-file"
+                key={file.name}
+              >
+                <span>{file.name}</span>
+
+                <small>
+                  {(file.size / 1024).toFixed(1)} KB
+                </small>
               </div>
-
             ))}
 
           </div>
-
         )}
 
-
-        {status && (
-
-          <div
-            className={
-              loading
-                ? "analysis-message loading-message"
-                : "analysis-message"
-            }
-          >
-            {status}
+        {message && (
+          <div className="upload-message">
+            {message}
           </div>
-
         )}
 
+        {error && (
+          <div className="upload-error">
+            {error}
+          </div>
+        )}
 
-        <div className="assessment-actions">
-
-          <button
-            className="secondary-button"
-            onClick={onBack}
-            disabled={loading}
-          >
-            Cancel
-          </button>
+        <div className="upload-actions">
 
           <button
             className="primary-button"
-            onClick={startAnalysis}
-            disabled={loading || files.length === 0}
+            onClick={handleUpload}
+            disabled={uploading || files.length === 0}
           >
-            {loading
-              ? "Analysing..."
-              : "Start Analysis →"}
+            {uploading
+              ? "Analysing Dataset..."
+              : "Upload & Run Analysis"}
           </button>
 
         </div>

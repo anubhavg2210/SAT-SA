@@ -1,22 +1,24 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import shutil
-from backend.analysis.case_analysis_engine import CaseAnalysisEngine
-from fastapi.middleware.cors import CORSMiddleware
-
-from backend.api.analysis_routes import router as analysis_router
 
 from backend.ingestion.dataset_loader import (
     load_csv_files,
     validate_dataset,
 )
-
 from backend.analysis.analysis_engine import AnalysisEngine
 from backend.analysis.case_analysis_engine import CaseAnalysisEngine
+from backend.api.analysis_routes import router as analysis_router
 
 
 app = FastAPI(title="SAT-SA")
+
+
+# ---------------------------------------------------------
+# CORS
+# ---------------------------------------------------------
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -27,14 +29,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
 app.include_router(analysis_router)
 
 
-class CaseData(BaseModel):
-    case_id: str
-    severity: str
-    status: str
+# ---------------------------------------------------------
+# REQUIRED DATASET FILES
+# ---------------------------------------------------------
 
+REQUIRED_FILES = {
+    "cases.csv",
+    "alerts.csv",
+    "investigations.csv",
+    "escalations.csv",
+    "evidence.csv",
+    "events.csv",
+    "assets.csv",
+}
+
+
+UPLOAD_DIR = Path("data/uploads")
+
+
+# ---------------------------------------------------------
+# ROOT
+# ---------------------------------------------------------
 
 @app.get("/")
 def root():
@@ -43,102 +63,98 @@ def root():
     }
 
 
-@app.post("/ingest")
-def ingest_case(case: CaseData):
-    return {
-        "message": "Case received successfully",
-        "case": case.model_dump(),
-    }
-
+# ---------------------------------------------------------
+# UPLOAD MULTIPLE CSV FILES
+# ---------------------------------------------------------
 
 @app.post("/upload")
 async def upload_csv(files: list[UploadFile] = File(...)):
-    upload_dir = Path("data/uploads")
-    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     uploaded_files = []
 
     for file in files:
+
+        if not file.filename:
+            continue
+
         if not file.filename.lower().endswith(".csv"):
             raise HTTPException(
                 status_code=400,
                 detail=f"Only CSV files are allowed: {file.filename}",
             )
 
-        file_path = upload_dir / file.filename
+        file_path = UPLOAD_DIR / Path(file.filename).name
 
         with file_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        uploaded_files.append(file.filename)
-
-    required_files = {
-        "cases.csv",
-        "alerts.csv",
-        "investigations.csv",
-        "escalations.csv",
-        "evidence.csv",
-        "events.csv",
-        "assets.csv",
-    }
+        uploaded_files.append(file_path.name)
 
     available_files = {
         file.name
-        for file in upload_dir.glob("*.csv")
+        for file in UPLOAD_DIR.glob("*.csv")
     }
 
-    missing_files = required_files - available_files
+    missing_files = REQUIRED_FILES - available_files
 
+    # Dataset is still incomplete
     if missing_files:
+
         return {
-            "message": (
-                "Files uploaded successfully, "
-                "but dataset is incomplete."
-            ),
-            "uploaded_files": uploaded_files,
+            "message": "Files uploaded successfully.",
             "dataset_status": "partial",
+            "uploaded_files": uploaded_files,
             "files_available": len(
-                available_files & required_files
+                available_files & REQUIRED_FILES
             ),
-            "files_required": len(required_files),
+            "files_required": len(REQUIRED_FILES),
             "missing_files": sorted(missing_files),
         }
 
+    # -----------------------------------------------------
+    # Validate complete dataset
+    # -----------------------------------------------------
+
     try:
-        data = load_csv_files(str(upload_dir))
+
+        data = load_csv_files(str(UPLOAD_DIR))
+
         validation = validate_dataset(data)
 
     except (FileNotFoundError, ValueError) as e:
+
         return {
-            "message": (
-                "All files are present, "
-                "but dataset validation failed."
-            ),
-            "uploaded_files": uploaded_files,
+            "message": "Dataset validation failed.",
             "dataset_status": "invalid",
+            "uploaded_files": uploaded_files,
             "validation_error": str(e),
         }
 
     return {
-        "message": (
-            "Dataset uploaded and "
-            "validated successfully."
-        ),
-        "uploaded_files": uploaded_files,
+        "message": "Dataset uploaded and validated successfully.",
         "dataset_status": "ready",
-        "files_available": len(required_files),
-        "files_required": len(required_files),
+        "uploaded_files": uploaded_files,
+        "files_available": len(REQUIRED_FILES),
+        "files_required": len(REQUIRED_FILES),
+        "missing_files": [],
         "validation": validation,
     }
 
 
+# ---------------------------------------------------------
+# ANALYZE COMPLETE DATASET
+# ---------------------------------------------------------
+
 @app.get("/analyze/dataset")
 def analyze_dataset():
-    upload_dir = Path("data/uploads")
 
     try:
-        data = load_csv_files(str(upload_dir))
+        data = load_csv_files(str(UPLOAD_DIR))
+
     except (FileNotFoundError, ValueError) as e:
+
         raise HTTPException(
             status_code=400,
             detail=str(e),
@@ -147,13 +163,20 @@ def analyze_dataset():
     engine = AnalysisEngine(data)
 
     return engine.analyze_dataset()
+
+
+# ---------------------------------------------------------
+# ANALYZE EVERYTHING
+# ---------------------------------------------------------
+
 @app.get("/analyze/all")
 def analyze_all():
-    upload_dir = Path("data/uploads")
 
     try:
-        data = load_csv_files(str(upload_dir))
+        data = load_csv_files(str(UPLOAD_DIR))
+
     except (FileNotFoundError, ValueError) as e:
+
         raise HTTPException(
             status_code=400,
             detail=str(e),
@@ -161,21 +184,28 @@ def analyze_all():
 
     engine = AnalysisEngine(data)
 
-    return engine.analyze_all()    
+    return engine.analyze_all()
+
+
+# ---------------------------------------------------------
+# ANALYZE SINGLE CASE
+# ---------------------------------------------------------
 
 @app.get("/analyze/{case_id}")
 def analyze_case(case_id: str):
-    upload_dir = Path("data/uploads")
 
     try:
-        data = load_csv_files(str(upload_dir))
+        data = load_csv_files(str(UPLOAD_DIR))
+
     except (FileNotFoundError, ValueError) as e:
+
         raise HTTPException(
             status_code=400,
             detail=str(e),
         )
 
     if "cases" not in data:
+
         raise HTTPException(
             status_code=400,
             detail="Cases dataset is not available.",
@@ -186,15 +216,17 @@ def analyze_case(case_id: str):
     )
 
     if case_id not in case_ids:
+
         raise HTTPException(
             status_code=404,
             detail=f"Case not found: {case_id}",
         )
 
-    engine = AnalysisEngine(data)
+    analysis_engine = AnalysisEngine(data)
     case_engine = CaseAnalysisEngine(data)
 
-    analysis_result = engine.analyze_case(case_id)
+    analysis_result = analysis_engine.analyze_case(case_id)
+
     case_context = case_engine.analyze_case(case_id)
 
     return {

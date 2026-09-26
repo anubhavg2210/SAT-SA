@@ -2,53 +2,30 @@ import { useState } from "react";
 
 import Header from "./components/Header";
 import Home from "./pages/Home";
+import Assessment from "./pages/Assessment";
 import Dashboard from "./pages/Dashboard";
-import { getAnalysis } from "./services/api";
 
 import "./App.css";
 
 function App() {
-
   const [page, setPage] = useState("home");
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
-  async function startAnalysis() {
+  function startAssessment() {
+    setPage("assessment");
+  }
 
+  function handleAnalysisComplete(result) {
+    setData(result);
     setPage("dashboard");
-    setLoading(true);
-    setError("");
-
-    try {
-
-      const result = await getAnalysis();
-
-      setData(result);
-
-    } catch (err) {
-
-      console.error(err);
-
-      setError(
-        err.message || "Unable to connect to SAT-SA backend."
-      );
-
-    } finally {
-
-      setLoading(false);
-
-    }
   }
 
   function openDashboard() {
-
     if (data) {
       setPage("dashboard");
     } else {
-      startAnalysis();
+      setPage("assessment");
     }
-
   }
 
   function goHome() {
@@ -64,16 +41,22 @@ function App() {
 
         {page === "home" && (
           <Home
-            onStartAssessment={startAnalysis}
+            onStartAssessment={startAssessment}
             onViewDashboard={openDashboard}
+          />
+        )}
+
+        {page === "assessment" && (
+          <Assessment
+            onAnalysisComplete={handleAnalysisComplete}
           />
         )}
 
         {page === "dashboard" && (
           <Dashboard
             data={data}
-            loading={loading}
-            error={error}
+            loading={false}
+            error=""
           />
         )}
 
