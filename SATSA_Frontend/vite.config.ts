@@ -1,7 +1,10 @@
-import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-// https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
-})
+  tanstackStart: {
+    srcDirectory: "./src",
+    router: {
+      routesDirectory: "./routes",
+    },
+  },
+});
