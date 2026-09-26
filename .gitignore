@@ -28,3 +28,4 @@ __pycache__/
 *.pyc
 baseline_summary.txt
 analysis_result.json
+node_modules/
