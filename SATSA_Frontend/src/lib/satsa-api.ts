@@ -1,7 +1,8 @@
 // Client for the user's own SATSA backend (Python + Pandas + scikit-learn + PostgreSQL).
 // Base URL is configurable; defaults to a locally running backend.
 export const API_BASE =
-  (import.meta.env["VITE_SATSA_API_URL"] as string | undefined) ?? "http://localhost:8000";
+  (import.meta.env["VITE_SATSA_API_URL"] as string | undefined) ??
+  "http://127.0.0.1:8000";
 
 const TOKEN_KEY = "satsa_token";
 
@@ -18,7 +19,13 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
   const headers = new Headers(init.headers);
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type"))
+  if (
+  init.body &&
+  !(init.body instanceof FormData) &&
+  !headers.has("Content-Type")
+) {
+  headers.set("Content-Type", "application/json");
+}
     headers.set("Content-Type", "application/json");
   let res: Response;
   try {
