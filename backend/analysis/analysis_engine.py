@@ -1,3 +1,23 @@
+def make_json_safe(obj):
+    if isinstance(obj, dict):
+        return {
+            str(key): make_json_safe(value)
+            for key, value in obj.items()
+        }
+
+    if isinstance(obj, (list, tuple)):
+        return [
+            make_json_safe(value)
+            for value in obj
+        ]
+
+    if hasattr(obj, "item"):
+        try:
+            return obj.item()
+        except (ValueError, TypeError):
+            pass
+
+    return obj
 from backend.analysis.supervisory_assessment_engine import (
     SupervisoryAssessmentEngine,
 )
@@ -428,19 +448,19 @@ class AnalysisEngine:
         # FINAL RESULT
         # -------------------------------------------------
 
-        return {
+        return make_json_safe({
 
-    "summary": summary,
+            "summary": summary,
 
-    "case_results": (
-        case_results
-    ),
+            "case_results": (
+                case_results
+            ),
 
-    "dataset_analysis": (
-        dataset_result
-    ),
+            "dataset_analysis": (
+                dataset_result
+            ),
 
-    "cse_assessments": (
-        supervisory_result
-    ),
-}
+            "cse_assessments": (
+                supervisory_result
+            ),
+        })

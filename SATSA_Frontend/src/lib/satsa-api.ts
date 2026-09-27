@@ -54,3 +54,45 @@ export function asList(d: unknown): Record<string, unknown>[] {
   }
   return [];
 }
+
+export type UploadResult = {
+  message?: string;
+  dataset_status?: "partial" | "ready" | "invalid";
+  uploaded_files?: string[];
+  files_available?: number;
+  files_required?: number;
+  missing_files?: string[];
+  validation?: unknown;
+  validation_error?: string;
+};
+
+export async function checkBackend() {
+  return apiFetch<{ message: string }>("/");
+}
+
+export async function uploadDataset(files: File[]) {
+  const formData = new FormData();
+
+  files.forEach((file) => {
+    formData.append("files", file);
+  });
+
+  return apiFetch<UploadResult>("/upload", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function analyzeDataset() {
+  return apiFetch<Record<string, unknown>>("/analyze/dataset");
+}
+
+export async function analyzeAll() {
+  return apiFetch<Record<string, unknown>>("/analyze/all");
+}
+
+export async function analyzeCase(caseId: string) {
+  return apiFetch<Record<string, unknown>>(
+    `/analyze/${encodeURIComponent(caseId)}`
+  );
+}

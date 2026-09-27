@@ -14,12 +14,8 @@ export const Route = createFileRoute("/_workspace")({
 
 const nav = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/case-analysis", label: "Case Analysis", icon: FolderSearch },
   { to: "/dataset-analysis", label: "Dataset Analysis", icon: Database },
-  { to: "/alerts", label: "Alerts", icon: Bell },
-  { to: "/investigations", label: "Investigations", icon: Search },
-  { to: "/evidence", label: "Evidence", icon: FileArchive },
-  { to: "/assets", label: "Assets", icon: Server },
+  { to: "/case-analysis", label: "Case Analysis", icon: FolderSearch },
   { to: "/reports", label: "Reports", icon: FileText },
 ] as const;
 

@@ -2,7 +2,15 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import shutil
-
+from pydantic import BaseModel
+from secrets import compare_digest
+from datetime import datetime, timedelta,timezone
+import secrets
+import base64
+import hashlib
+import hmac
+import json
+import os
 from backend.ingestion.dataset_loader import (
     load_csv_files,
     validate_dataset,
@@ -18,19 +26,144 @@ app = FastAPI(title="SAT-SA")
 # ---------------------------------------------------------
 # CORS
 # ---------------------------------------------------------
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://10.12.68.51:5173",
+        "http://10.12.68.51:8080",
     ],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|10\.12\.68\.51)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ---------------------------------------------------------
+# AUTHENTICATION
+# ---------------------------------------------------------
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+# Demo users for local development
+USERS = {
+    "admin": "admin123",
+    "anubh": "satsa123",
+}
+
+
+# ---------------------------------------------------------
+# PERSISTENT TOKEN AUTHENTICATION
+# ---------------------------------------------------------
+
+# Stable secret: survives FastAPI reloads/restarts.
+# For production, set SATSA_SECRET_KEY as an environment variable.
+AUTH_SECRET = os.getenv(
+    "SATSA_SECRET_KEY",
+    "satsa-local-development-secret-change-in-production",
+).encode()
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _create_token(username: str) -> str:
+    payload = {
+        "username": username,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    payload_bytes = json.dumps(
+        payload,
+        separators=(",", ":"),
+    ).encode()
+
+    payload_part = _b64url(payload_bytes)
+
+    signature = hmac.new(
+        AUTH_SECRET,
+        payload_part.encode(),
+        hashlib.sha256,
+    ).digest()
+
+    signature_part = _b64url(signature)
+
+    return f"{payload_part}.{signature_part}"
+
+
+def _verify_token(token: str) -> dict:
+    try:
+        payload_part, signature_part = token.split(".", 1)
+
+        expected_signature = hmac.new(
+            AUTH_SECRET,
+            payload_part.encode(),
+            hashlib.sha256,
+        ).digest()
+
+        supplied_signature = base64.urlsafe_b64decode(
+            signature_part + "=" * (-len(signature_part) % 4)
+        )
+
+        if not hmac.compare_digest(
+            expected_signature,
+            supplied_signature,
+        ):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authentication token",
+            )
+
+        payload = json.loads(
+            base64.urlsafe_b64decode(
+                payload_part + "=" * (-len(payload_part) % 4)
+            )
+        )
+
+        return payload
+
+    except (ValueError, KeyError, json.JSONDecodeError):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token",
+        )
+
+
+@app.post("/auth/login")
+def login(request: LoginRequest):
+
+    username = request.username.strip()
+
+    if username not in USERS:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password",
+        )
+
+    if not compare_digest(USERS[username], request.password):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password",
+        )
+
+    token = _create_token(username)
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "username": username,
+    }
+
+@app.post("/auth/logout")
+def logout():
+    return {
+        "message": "Logged out successfully"
+    }
 app.include_router(analysis_router)
 
 
