@@ -1,8 +1,6 @@
 // Client for the user's own SATSA backend (Python + Pandas + scikit-learn + PostgreSQL).
 // Base URL is configurable; defaults to a locally running backend.
-export const API_BASE =
-  (import.meta.env["VITE_SATSA_API_URL"] as string | undefined) ??
-  "http://127.0.0.1:8000";
+export const API_BASE = "http://127.0.0.1:8000";
 
 const TOKEN_KEY = "satsa_token";
 
@@ -37,7 +35,22 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
     setToken(null);
     throw new Error("Session expired. Please log in again.");
   }
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+  const errorText = await res.text();
+
+  let detail = errorText;
+
+  try {
+    const parsed = JSON.parse(errorText);
+    detail = parsed?.detail
+      ? JSON.stringify(parsed.detail)
+      : errorText;
+  } catch {
+    // keep raw response
+  }
+
+  throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+}
   const ct = res.headers.get("content-type") ?? "";
   return (ct.includes("json") ? res.json() : res.text()) as Promise<T>;
 }

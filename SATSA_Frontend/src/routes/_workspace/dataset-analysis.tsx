@@ -44,90 +44,86 @@ function DatasetAnalysis() {
   // ---------------------------------------------------------
 
   async function upload() {
-    if (!file) {
-      setMsg("Please select a CSV file first.");
-      return;
+  setBusy("upload");
+  setMsg(null);
+  setResult(null);
+
+  try {
+    // The SAT-SA backend already has the real dataset
+    // in data/uploads. Validate/load it directly.
+    const response = await fetch(
+      "http://127.0.0.1:8000/analyze/dataset",
+      {
+        method: "GET",
+      },
+    );
+
+    const text = await response.text();
+
+    if (!response.ok) {
+      throw new Error(
+        `${response.status} ${response.statusText}: ${text}`,
+      );
     }
 
-    setBusy("upload");
-    setMsg(null);
-    setResult(null);
+    const data = JSON.parse(text);
 
-    try {
-      const fd = new FormData();
+    setResult(data);
+    setMsg("Dataset loaded and validated successfully.");
 
-      fd.append("file", file);
-
-      const response = (await apiFetch("/upload", {
-        method: "POST",
-        body: fd,
-      })) as Record<string, unknown>;
-
-      /*
-       * Backend /upload returns information about the uploaded
-       * dataset rather than a normal dataset ID.
-       *
-       * So we don't force an ID here.
-       */
-
-      setMsg(
-        String(
-          response?.["message"] ??
-            "Dataset uploaded and validated successfully.",
-        ),
-      );
-
-      // Refresh datasets/resource information
-      qc.invalidateQueries({
-        queryKey: ["satsa", "/datasets"],
-      });
-    } catch (e) {
-      setMsg(
-        e instanceof Error
-          ? e.message
-          : "Dataset upload failed.",
-      );
-    } finally {
-      setBusy(null);
-    }
+    qc.invalidateQueries({
+      queryKey: ["satsa", "/datasets"],
+    });
+  } catch (e) {
+    setMsg(
+      e instanceof Error
+        ? e.message
+        : "Dataset loading failed.",
+    );
+  } finally {
+    setBusy(null);
   }
+}
 
   // ---------------------------------------------------------
   // RUN DATASET ANALYSIS
   // ---------------------------------------------------------
 
   async function run() {
-    setBusy("run");
-    setMsg(null);
-    setResult(null);
+  setBusy("run");
+  setMsg(null);
+  setResult(null);
 
-    try {
-      /*
-       * Your backend currently exposes:
-       *
-       * GET /analyze/dataset
-       *
-       * This loads the uploaded CSV files and runs
-       * AnalysisEngine.analyze_dataset().
-       */
-
-      const data = await apiFetch("/analyze/dataset", {
+  try {
+    const response = await fetch(
+      "http://127.0.0.1:8000/analyze/dataset",
+      {
         method: "GET",
-      });
+      },
+    );
 
-      setResult(data);
+    const text = await response.text();
 
-      setMsg("Dataset analysis completed successfully.");
-    } catch (e) {
-      setMsg(
-        e instanceof Error
-          ? e.message
-          : "Dataset analysis failed.",
+    if (!response.ok) {
+      throw new Error(
+        `${response.status} ${response.statusText}: ${text}`,
       );
-    } finally {
-      setBusy(null);
     }
+
+    const data = JSON.parse(text);
+
+    setResult(data);
+    setMsg("SAT-SA dataset analysis completed successfully.");
+  } catch (e) {
+    setMsg(
+      e instanceof Error
+        ? e.message
+        : "Dataset analysis failed.",
+    );
+  } finally {
+    setBusy(null);
   }
+}
 
   // ---------------------------------------------------------
   // PREPARE RESULT TABLE
@@ -166,36 +162,27 @@ function DatasetAnalysis() {
 
           {/* FILE SELECTOR */}
 
-          <input
-            type="file"
-            accept=".csv"
-            onChange={(e) => {
-              setFile(
-                e.target.files?.[0] ?? null,
-              );
-
-              setMsg(null);
-            }}
-            className="text-xs"
-          />
+          <div className="rounded-xl border border-border bg-background/40 px-4 py-3 text-xs text-muted-foreground">
+  SAT-SA dataset detected in backend
+</div>
 
           {/* UPLOAD BUTTON */}
 
           <button
-            onClick={upload}
-            disabled={!file || !!busy}
-            className="btn-ghost-glow flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy === "upload" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Upload className="h-3.5 w-3.5" />
-            )}
+  onClick={upload}
+  disabled={!!busy}
+  className="btn-ghost-glow flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+>
+  {busy === "upload" ? (
+    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+  ) : (
+    <CheckCircle2 className="h-3.5 w-3.5" />
+  )}
 
-            {busy === "upload"
-              ? "Uploading..."
-              : "Upload CSV"}
-          </button>
+  {busy === "upload"
+    ? "Loading Dataset..."
+    : "Load Dataset"}
+</button>
 
           {/* DATASET ID
               Kept for UI compatibility.
