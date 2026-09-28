@@ -27,6 +27,7 @@ import {
 import {
   analyzeAll,
   analyzeCase,
+  getStoredDataset,
 } from "@/lib/satsa-api";
 
 export const Route = createFileRoute("/_workspace/case-analysis")({
@@ -121,14 +122,9 @@ function severityClass(severity?: string): string {
   }
 }
 
-/**
- * /analyze/all can contain the case-analysis list under different
- * container keys depending on backend version.
- *
- * Instead of depending on one fragile key, walk the response and
- * collect objects that actually look like case analysis records.
- */
-function getFirstCase(cases: CaseSummary[]): CaseSummary | undefined {
+function getFirstCase(
+  cases: CaseSummary[],
+): CaseSummary | undefined {
   return cases[0];
 }
 
@@ -157,9 +153,7 @@ function extractCases(
       : null;
 
   const signalsValue = value["signals"];
-
   const confidenceValue = value["confidence"];
-
   const fusionValue = value["fusion"];
 
   const looksLikeCase =
@@ -196,9 +190,7 @@ function extractCases(
 
       result.push({
         case_id: caseId,
-
         severity,
-
         priority,
 
         signal_count:
@@ -290,7 +282,9 @@ function SignalCard({
   const [open, setOpen] = useState(false);
 
   const code = stringValue(
-    signal["signal_code"] ?? signal["signal"] ?? signal["type"],
+    signal["signal_code"] ??
+      signal["signal"] ??
+      signal["type"],
     "Unknown Signal",
   );
 
@@ -439,6 +433,9 @@ function DataSection({
 }
 
 function CaseAnalysis() {
+  const [datasetReady, setDatasetReady] =
+    useState(false);
+
   const [allAnalysis, setAllAnalysis] =
     useState<AnyRecord | null>(null);
 
@@ -501,8 +498,22 @@ function CaseAnalysis() {
     }
   }
 
+  /*
+   * Dataset-aware initialization.
+   *
+   * Case analysis only runs when the Dashboard has already
+   * stored a validated dataset state in localStorage.
+   */
   useEffect(() => {
-    void loadCases();
+    const storedDataset = getStoredDataset();
+
+    if (storedDataset?.status === "ready") {
+      setDatasetReady(true);
+      void loadCases();
+    } else {
+      setDatasetReady(false);
+      setLoadingCases(false);
+    }
   }, []);
 
   const cases = useMemo(
@@ -516,6 +527,7 @@ function CaseAnalysis() {
     for (const item of cases) {
       const cse = item.cse_id?.trim() || "UNASSIGNED";
       const bucket = grouped.get(cse) ?? [];
+
       bucket.push(item);
       grouped.set(cse, bucket);
     }
@@ -532,41 +544,62 @@ function CaseAnalysis() {
                 signal["type"] ??
                 "UNKNOWN_SIGNAL",
             );
-            signalCounts[name] = (signalCounts[name] ?? 0) + 1;
+
+            signalCounts[name] =
+              (signalCounts[name] ?? 0) + 1;
           }
         }
 
         return {
           id,
-          cases: [...groupCases].sort((a, b) =>
-            (b.signal_count ?? 0) - (a.signal_count ?? 0),
+          cases: [...groupCases].sort(
+            (a, b) =>
+              (b.signal_count ?? 0) -
+              (a.signal_count ?? 0),
           ),
+
           totalSignals: groupCases.reduce(
             (sum, item) => sum + item.signal_count,
             0,
           ),
+
           critical: groupCases.filter(
-            (item) => item.severity?.toUpperCase() === "CRITICAL",
+            (item) =>
+              item.severity?.toUpperCase() === "CRITICAL",
           ).length,
+
           high: groupCases.filter(
-            (item) => item.severity?.toUpperCase() === "HIGH",
+            (item) =>
+              item.severity?.toUpperCase() === "HIGH",
           ).length,
+
           medium: groupCases.filter(
-            (item) => item.severity?.toUpperCase() === "MEDIUM",
+            (item) =>
+              item.severity?.toUpperCase() === "MEDIUM",
           ).length,
+
           low: groupCases.filter(
-            (item) => item.severity?.toUpperCase() === "LOW",
+            (item) =>
+              item.severity?.toUpperCase() === "LOW",
           ).length,
+
           signalCounts,
           signalTypes: Object.keys(signalCounts).length,
         };
       })
-      .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+      .sort((a, b) =>
+        a.id.localeCompare(
+          b.id,
+          undefined,
+          { numeric: true },
+        ),
+      );
   }, [cases]);
 
   useEffect(() => {
     if (!selectedCseId) {
       const firstCse = cseGroups[0];
+
       if (firstCse) {
         setSelectedCseId(firstCse.id);
       }
@@ -574,17 +607,24 @@ function CaseAnalysis() {
   }, [cseGroups, selectedCseId]);
 
   const selectedCse =
-    cseGroups.find((group) => group.id === selectedCseId);
+    cseGroups.find(
+      (group) => group.id === selectedCseId,
+    );
 
   const visibleCases = useMemo(() => {
     if (!selectedCse) return [];
 
     const query = search.trim().toLowerCase();
-    if (!query) return selectedCse.cases;
+
+    if (!query) {
+      return selectedCse.cases;
+    }
 
     return selectedCse.cases.filter((item) =>
       item.case_id.toLowerCase().includes(query) ||
-      String(item.asset_id ?? "").toLowerCase().includes(query) ||
+      String(item.asset_id ?? "")
+        .toLowerCase()
+        .includes(query) ||
       item.signals.some((signal: AnyRecord) =>
         String(
           signal["signal_code"] ??
@@ -601,7 +641,10 @@ function CaseAnalysis() {
   useEffect(() => {
     if (!selectedCaseId && cases.length > 0) {
       const firstCase = cases[0];
-      if (firstCase) void loadCase(firstCase.case_id);
+
+      if (firstCase) {
+        void loadCase(firstCase.case_id);
+      }
     }
   }, [cases, selectedCaseId]);
 
@@ -614,9 +657,10 @@ function CaseAnalysis() {
     ? caseDetail
     : {};
 
-  const detailSignals: AnyRecord[] = Array.isArray(detail["signals"])
-    ? detail["signals"].filter(isRecord)
-    : selectedSummary?.signals ?? [];
+  const detailSignals: AnyRecord[] =
+    Array.isArray(detail["signals"])
+      ? detail["signals"].filter(isRecord)
+      : selectedSummary?.signals ?? [];
 
   const confidence =
     isRecord(detail["confidence"])
@@ -628,18 +672,20 @@ function CaseAnalysis() {
       ? detail["fusion"]
       : selectedSummary?.fusion ?? {};
 
-  const findings: AnyRecord[] = Array.isArray(fusion["findings"])
-    ? fusion["findings"].filter(isRecord)
-    : [];
+  const findings: AnyRecord[] =
+    Array.isArray(fusion["findings"])
+      ? fusion["findings"].filter(isRecord)
+      : [];
 
   const confidenceScore = numberValue(
     confidence["confidence_score"],
     0,
   );
 
-  const summary: AnyRecord = isRecord(allAnalysis?.["summary"])
-    ? allAnalysis["summary"]
-    : {};
+  const summary: AnyRecord =
+    isRecord(allAnalysis?.["summary"])
+      ? allAnalysis["summary"]
+      : {};
 
   const totalCases = numberValue(
     summary["total_cases"],
@@ -702,7 +748,17 @@ function CaseAnalysis() {
             <button
               type="button"
               onClick={() => {
-                void loadCases();
+                const storedDataset = getStoredDataset();
+
+                if (storedDataset?.status === "ready") {
+                  setDatasetReady(true);
+                  void loadCases();
+                } else {
+                  setDatasetReady(false);
+                  setError(
+                    "A ready dataset is required before running analysis.",
+                  );
+                }
               }}
               disabled={loadingCases}
               className="inline-flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.035] px-4 py-2.5 text-xs font-medium text-slate-300 transition hover:bg-white/[0.07] disabled:opacity-50"
@@ -716,6 +772,74 @@ function CaseAnalysis() {
             </button>
           </div>
         </section>
+
+        {/* DATASET STATUS */}
+        <section className="rounded-2xl border border-white/[0.07] bg-[#080d1d]/90 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div
+                className={`rounded-xl border p-2 ${
+                  datasetReady
+                    ? "border-emerald-400/15 bg-emerald-500/10 text-emerald-300"
+                    : "border-rose-400/15 bg-rose-500/10 text-rose-300"
+                }`}
+              >
+                {datasetReady ? (
+                  <ShieldCheck className="h-4 w-4" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
+              </div>
+
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Dataset Status
+                </p>
+
+                <p className="mt-1 text-sm font-medium text-slate-200">
+                  {datasetReady
+                    ? "Dataset Ready"
+                    : "Dataset Not Loaded"}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-600">
+                  {datasetReady
+                    ? "Validated dataset available for SAT-SA analysis."
+                    : "Upload and validate the dataset from the Dashboard before running analysis."}
+                </p>
+              </div>
+            </div>
+
+            <div
+              className={`h-2.5 w-2.5 rounded-full ${
+                datasetReady
+                  ? "bg-emerald-400"
+                  : "bg-rose-400"
+              }`}
+            />
+          </div>
+        </section>
+
+        {!datasetReady && (
+          <section className="rounded-2xl border border-amber-400/15 bg-amber-500/[0.04] p-6">
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl border border-amber-400/15 bg-amber-500/10 p-2.5 text-amber-300">
+                <Database className="h-5 w-5" />
+              </div>
+
+              <div>
+                <h2 className="text-sm font-semibold text-slate-100">
+                  Dataset Required
+                </h2>
+
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                  Upload and validate the SAT-SA dataset from the Dashboard
+                  before running case analysis.
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {error && (
           <div className="flex items-start gap-3 rounded-2xl border border-rose-400/15 bg-rose-500/[0.06] p-4">
@@ -739,17 +863,29 @@ function CaseAnalysis() {
             <div>
               <div className="flex items-center gap-2">
                 <Layers3 className="h-4 w-4 text-violet-300" />
-                <h2 className="text-sm font-semibold text-slate-100">CSE Signal Landscape</h2>
+                <h2 className="text-sm font-semibold text-slate-100">
+                  CSE Signal Landscape
+                </h2>
               </div>
-              <p className="mt-1 text-xs text-slate-600">Select a Cyber Security Entity to see its cases and signal footprint.</p>
+
+              <p className="mt-1 text-xs text-slate-600">
+                Select a Cyber Security Entity to see its cases and signal footprint.
+              </p>
             </div>
-            <span className="text-[10px] uppercase tracking-[0.16em] text-slate-600">{cseGroups.length} CSEs detected</span>
+
+            <span className="text-[10px] uppercase tracking-[0.16em] text-slate-600">
+              {cseGroups.length} CSEs detected
+            </span>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {cseGroups.map((group) => {
-              const selected = group.id === selectedCse?.id;
-              const topSignals = Object.entries(group.signalCounts)
+              const selected =
+                group.id === selectedCse?.id;
+
+              const topSignals = Object.entries(
+                group.signalCounts,
+              )
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 3);
 
@@ -759,8 +895,13 @@ function CaseAnalysis() {
                   type="button"
                   onClick={() => {
                     setSelectedCseId(group.id);
-                    const firstCase = group.cases[0];
-                    if (firstCase) void loadCase(firstCase.case_id);
+
+                    const firstCase =
+                      group.cases[0];
+
+                    if (firstCase) {
+                      void loadCase(firstCase.case_id);
+                    }
                   }}
                   className={`group rounded-2xl border p-4 text-left transition ${
                     selected
@@ -770,44 +911,115 @@ function CaseAnalysis() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">CSE</div>
-                      <div className="mt-1 text-lg font-semibold text-slate-100">{group.id}</div>
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                        CSE
+                      </div>
+
+                      <div className="mt-1 text-lg font-semibold text-slate-100">
+                        {group.id}
+                      </div>
                     </div>
-                    <div className={`rounded-xl p-2 ${selected ? "bg-violet-500/15 text-violet-300" : "bg-white/[0.04] text-slate-500"}`}>
+
+                    <div
+                      className={`rounded-xl p-2 ${
+                        selected
+                          ? "bg-violet-500/15 text-violet-300"
+                          : "bg-white/[0.04] text-slate-500"
+                      }`}
+                    >
                       <BarChart3 className="h-4 w-4" />
                     </div>
                   </div>
 
                   <div className="mt-4 grid grid-cols-3 gap-2">
-                    <CseMetric label="Cases" value={group.cases.length} />
-                    <CseMetric label="Signals" value={group.totalSignals} />
-                    <CseMetric label="Types" value={group.signalTypes} />
+                    <CseMetric
+                      label="Cases"
+                      value={group.cases.length}
+                    />
+
+                    <CseMetric
+                      label="Signals"
+                      value={group.totalSignals}
+                    />
+
+                    <CseMetric
+                      label="Types"
+                      value={group.signalTypes}
+                    />
                   </div>
 
                   <div className="mt-4 space-y-2">
-                    {topSignals.length > 0 ? topSignals.map(([name, count]) => (
-                      <div key={name}>
-                        <div className="flex items-center justify-between gap-2 text-[10px]">
-                          <span className="truncate text-slate-500">{formatLabel(name)}</span>
-                          <span className="text-slate-400">{count}</span>
-                        </div>
-                        <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/[0.05]">
-                          <div
-                            className="h-full rounded-full bg-violet-400/70"
-                            style={{ width: `${Math.max(8, Math.min(100, (count / Math.max(1, group.totalSignals)) * 100))}%` }}
-                          />
-                        </div>
+                    {topSignals.length > 0 ? (
+                      topSignals.map(
+                        ([name, count]) => (
+                          <div key={name}>
+                            <div className="flex items-center justify-between gap-2 text-[10px]">
+                              <span className="truncate text-slate-500">
+                                {formatLabel(name)}
+                              </span>
+
+                              <span className="text-slate-400">
+                                {count}
+                              </span>
+                            </div>
+
+                            <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/[0.05]">
+                              <div
+                                className="h-full rounded-full bg-violet-400/70"
+                                style={{
+                                  width: `${Math.max(
+                                    8,
+                                    Math.min(
+                                      100,
+                                      (count /
+                                        Math.max(
+                                          1,
+                                          group.totalSignals,
+                                        )) *
+                                        100,
+                                    ),
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ),
+                      )
+                    ) : (
+                      <div className="text-[10px] text-slate-600">
+                        No signals recorded
                       </div>
-                    )) : (
-                      <div className="text-[10px] text-slate-600">No signals recorded</div>
                     )}
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-1.5">
-                    {group.critical > 0 && <SeverityPill label={`${group.critical} Critical`} className="text-rose-300 bg-rose-500/10 border-rose-400/15" />}
-                    {group.high > 0 && <SeverityPill label={`${group.high} High`} className="text-orange-300 bg-orange-500/10 border-orange-400/15" />}
-                    {group.medium > 0 && <SeverityPill label={`${group.medium} Medium`} className="text-amber-300 bg-amber-500/10 border-amber-400/15" />}
-                    {group.low > 0 && <SeverityPill label={`${group.low} Low`} className="text-sky-300 bg-sky-500/10 border-sky-400/15" />}
+                    {group.critical > 0 && (
+                      <SeverityPill
+                        label={`${group.critical} Critical`}
+                        className="text-rose-300 bg-rose-500/10 border-rose-400/15"
+                      />
+                    )}
+
+                    {group.high > 0 && (
+                      <SeverityPill
+                        label={`${group.high} High`}
+                        className="text-orange-300 bg-orange-500/10 border-orange-400/15"
+                      />
+                    )}
+
+                    {group.medium > 0 && (
+                      <SeverityPill
+                        label={`${group.medium} Medium`}
+                        className="text-amber-300 bg-amber-500/10 border-amber-400/15"
+                      />
+                    )}
+
+                    {group.low > 0 && (
+                      <SeverityPill
+                        label={`${group.low} Low`}
+                        className="text-sky-300 bg-sky-500/10 border-sky-400/15"
+                      />
+                    )}
                   </div>
                 </button>
               );
@@ -817,6 +1029,7 @@ function CaseAnalysis() {
 
         {/* MAIN WORKSPACE */}
         <section className="grid min-h-[720px] gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+
           {/* CSE CASE EXPLORER */}
           <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-[#080d1d]/90">
             <div className="border-b border-white/[0.06] p-5">
@@ -824,19 +1037,32 @@ function CaseAnalysis() {
                 <div>
                   <div className="flex items-center gap-2">
                     <Layers3 className="h-4 w-4 text-violet-300" />
-                    <h2 className="text-sm font-semibold text-slate-100">{selectedCse?.id ?? "CSE"} Cases</h2>
+
+                    <h2 className="text-sm font-semibold text-slate-100">
+                      {selectedCse?.id ?? "CSE"} Cases
+                    </h2>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">{selectedCse?.cases.length ?? 0} cases · {selectedCse?.totalSignals ?? 0} signals</p>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    {selectedCse?.cases.length ?? 0} cases ·{" "}
+                    {selectedCse?.totalSignals ?? 0} signals
+                  </p>
                 </div>
+
                 <Zap className="h-4 w-4 text-slate-600" />
               </div>
 
               <div className="relative mt-4">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
+
                 <input
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder={`Search ${selectedCse?.id ?? "CSE"} cases...`}
+                  onChange={(event) =>
+                    setSearch(event.target.value)
+                  }
+                  placeholder={`Search ${
+                    selectedCse?.id ?? "CSE"
+                  } cases...`}
                   className="w-full rounded-xl border border-white/[0.07] bg-black/20 py-2.5 pl-9 pr-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-violet-400/30"
                 />
               </div>
@@ -844,52 +1070,125 @@ function CaseAnalysis() {
 
             <div className="border-b border-white/[0.06] px-5 py-4">
               <div className="grid grid-cols-3 gap-2">
-                <MiniStat label="Critical" value={selectedCse?.critical ?? 0} />
-                <MiniStat label="High" value={selectedCse?.high ?? 0} />
-                <MiniStat label="Signal Types" value={selectedCse?.signalTypes ?? 0} />
+                <MiniStat
+                  label="Critical"
+                  value={selectedCse?.critical ?? 0}
+                />
+
+                <MiniStat
+                  label="High"
+                  value={selectedCse?.high ?? 0}
+                />
+
+                <MiniStat
+                  label="Signal Types"
+                  value={selectedCse?.signalTypes ?? 0}
+                />
               </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {loadingCases ? (
-                <div className="flex items-center justify-center py-16 text-slate-500"><Loader2 className="h-5 w-5 animate-spin" /></div>
+                <div className="flex items-center justify-center py-16 text-slate-500">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
               ) : visibleCases.length === 0 ? (
                 <div className="px-4 py-12 text-center">
                   <Search className="mx-auto h-6 w-6 text-slate-700" />
-                  <p className="mt-3 text-sm text-slate-500">No matching cases</p>
+
+                  <p className="mt-3 text-sm text-slate-500">
+                    No matching cases
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {visibleCases.map((item) => {
-                    const selected = item.case_id === selectedCaseId;
-                    const primarySignal = item.signals[0];
-                    const primarySignalName = primarySignal
-                      ? String(primarySignal["signal_code"] ?? primarySignal["signal"] ?? primarySignal["type"] ?? "Signal")
-                      : "No signal";
+                    const selected =
+                      item.case_id === selectedCaseId;
+
+                    const primarySignal =
+                      item.signals[0];
+
+                    const primarySignalName =
+                      primarySignal
+                        ? String(
+                            primarySignal[
+                              "signal_code"
+                            ] ??
+                              primarySignal[
+                                "signal"
+                              ] ??
+                              primarySignal[
+                                "type"
+                              ] ??
+                              "Signal",
+                          )
+                        : "No signal";
 
                     return (
                       <button
                         key={item.case_id}
                         type="button"
-                        onClick={() => void loadCase(item.case_id)}
-                        className={`w-full rounded-xl border p-4 text-left transition ${selected ? "border-violet-400/30 bg-violet-500/[0.09]" : "border-white/[0.05] bg-white/[0.015] hover:border-white/[0.10] hover:bg-white/[0.03]"}`}
+                        onClick={() =>
+                          void loadCase(
+                            item.case_id,
+                          )
+                        }
+                        className={`w-full rounded-xl border p-4 text-left transition ${
+                          selected
+                            ? "border-violet-400/30 bg-violet-500/[0.09]"
+                            : "border-white/[0.05] bg-white/[0.015] hover:border-white/[0.10] hover:bg-white/[0.03]"
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <CircleDot className={`h-3 w-3 ${selected ? "text-violet-300" : "text-slate-600"}`} />
-                              <span className="text-sm font-semibold text-slate-200">{item.case_id}</span>
+                              <CircleDot
+                                className={`h-3 w-3 ${
+                                  selected
+                                    ? "text-violet-300"
+                                    : "text-slate-600"
+                                }`}
+                              />
+
+                              <span className="text-sm font-semibold text-slate-200">
+                                {item.case_id}
+                              </span>
                             </div>
+
                             <div className="mt-2 flex flex-wrap gap-1.5">
-                              <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase ${severityClass(item.severity)}`}>{item.severity ?? "UNKNOWN"}</span>
-                              <span className="rounded-full border border-white/[0.07] bg-white/[0.035] px-2 py-0.5 text-[9px] font-semibold text-slate-500">{item.priority ?? "—"}</span>
+                              <span
+                                className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase ${severityClass(
+                                  item.severity,
+                                )}`}
+                              >
+                                {item.severity ??
+                                  "UNKNOWN"}
+                              </span>
+
+                              <span className="rounded-full border border-white/[0.07] bg-white/[0.035] px-2 py-0.5 text-[9px] font-semibold text-slate-500">
+                                {item.priority ??
+                                  "—"}
+                              </span>
                             </div>
                           </div>
-                          <span className="shrink-0 rounded-lg bg-white/[0.04] px-2 py-1 text-[10px] text-slate-500">{item.signal_count} signals</span>
+
+                          <span className="shrink-0 rounded-lg bg-white/[0.04] px-2 py-1 text-[10px] text-slate-500">
+                            {item.signal_count} signals
+                          </span>
                         </div>
+
                         <div className="mt-3 flex items-center justify-between gap-3 text-[10px]">
-                          <span className="truncate text-slate-600">{item.asset_id ?? "No asset"}</span>
-                          <span className="truncate text-slate-500">{formatLabel(primarySignalName)}</span>
+                          <span className="truncate text-slate-600">
+                            {item.asset_id ??
+                              "No asset"}
+                          </span>
+
+                          <span className="truncate text-slate-500">
+                            {formatLabel(
+                              primarySignalName,
+                            )}
+                          </span>
                         </div>
                       </button>
                     );
@@ -900,8 +1199,14 @@ function CaseAnalysis() {
 
             <div className="border-t border-white/[0.06] p-4">
               <div className="flex items-center justify-between text-[10px] text-slate-600">
-                <span>Showing {visibleCases.length} of {selectedCse?.cases.length ?? 0}</span>
-                <span>{selectedCse?.totalSignals ?? 0} total signals</span>
+                <span>
+                  Showing {visibleCases.length} of{" "}
+                  {selectedCse?.cases.length ?? 0}
+                </span>
+
+                <span>
+                  {selectedCse?.totalSignals ?? 0} total signals
+                </span>
               </div>
             </div>
           </aside>
@@ -941,11 +1246,13 @@ function CaseAnalysis() {
                               selectedSummary.severity,
                             )}`}
                           >
-                            {selectedSummary.severity ?? "UNKNOWN"}
+                            {selectedSummary.severity ??
+                              "UNKNOWN"}
                           </span>
 
                           <span className="rounded-full border border-white/[0.07] bg-white/[0.035] px-2.5 py-1 text-[10px] font-semibold text-slate-400">
-                            {selectedSummary.priority ?? "—"}
+                            {selectedSummary.priority ??
+                              "—"}
                           </span>
 
                           {selectedSummary.cse_id && (
@@ -970,7 +1277,8 @@ function CaseAnalysis() {
                     <MetricCard
                       label="Severity"
                       value={
-                        selectedSummary.severity ?? "UNKNOWN"
+                        selectedSummary.severity ??
+                        "UNKNOWN"
                       }
                       icon={
                         <ShieldAlert className="h-4 w-4" />
@@ -1039,16 +1347,25 @@ function CaseAnalysis() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {detailSignals.map((signal: AnyRecord, index) => (
-                        <SignalCard
-                          key={`${String(
-                            signal["signal_code"] ??
-                              signal["signal"] ??
-                              "signal",
-                          )}-${index}`}
-                          signal={signal}
-                        />
-                      ))}
+                      {detailSignals.map(
+                        (
+                          signal: AnyRecord,
+                          index,
+                        ) => (
+                          <SignalCard
+                            key={`${String(
+                              signal[
+                                "signal_code"
+                              ] ??
+                                signal[
+                                  "signal"
+                                ] ??
+                                "signal",
+                            )}-${index}`}
+                            signal={signal}
+                          />
+                        ),
+                      )}
                     </div>
                   )}
                 </section>
@@ -1067,56 +1384,79 @@ function CaseAnalysis() {
                     </div>
 
                     <div className="space-y-3">
-                      {findings.map((finding: AnyRecord, index) => (
-                        <div
-                          key={index}
-                          className="rounded-xl border border-white/[0.06] bg-black/10 p-4"
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="rounded-lg border border-violet-400/15 bg-violet-500/10 p-2 text-violet-300">
-                              <Activity className="h-4 w-4" />
-                            </div>
+                      {findings.map(
+                        (
+                          finding: AnyRecord,
+                          index,
+                        ) => (
+                          <div
+                            key={index}
+                            className="rounded-xl border border-white/[0.06] bg-black/10 p-4"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="rounded-lg border border-violet-400/15 bg-violet-500/10 p-2 text-violet-300">
+                                <Activity className="h-4 w-4" />
+                              </div>
 
-                            <div>
-                              <p className="text-sm font-semibold text-slate-200">
-                                {formatLabel(
-                                  stringValue(
-                                    finding["finding_type"] ??
-                                      finding["signal_code"],
-                                    "Fused Finding",
-                                  ),
-                                )}
-                              </p>
-
-                              <p className="mt-1 text-xs leading-5 text-slate-400">
-                                {stringValue(
-                                  finding["description"],
-                                  "No finding description available.",
-                                )}
-                              </p>
-
-                              {Array.isArray(
-                                finding["supporting_signals"],
-                              ) && (
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  {(finding["supporting_signals"] as unknown[]).map(
-                                    (signal: unknown) => (
-                                      <span
-                                        key={String(signal)}
-                                        className="rounded-lg border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[10px] text-slate-500"
-                                      >
-                                        {formatLabel(
-                                          String(signal),
-                                        )}
-                                      </span>
+                              <div>
+                                <p className="text-sm font-semibold text-slate-200">
+                                  {formatLabel(
+                                    stringValue(
+                                      finding[
+                                        "finding_type"
+                                      ] ??
+                                        finding[
+                                          "signal_code"
+                                        ],
+                                      "Fused Finding",
                                     ),
                                   )}
-                                </div>
-                              )}
+                                </p>
+
+                                <p className="mt-1 text-xs leading-5 text-slate-400">
+                                  {stringValue(
+                                    finding[
+                                      "description"
+                                    ],
+                                    "No finding description available.",
+                                  )}
+                                </p>
+
+                                {Array.isArray(
+                                  finding[
+                                    "supporting_signals"
+                                  ],
+                                ) && (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {(
+                                      finding[
+                                        "supporting_signals"
+                                      ] as unknown[]
+                                    ).map(
+                                      (
+                                        signal: unknown,
+                                      ) => (
+                                        <span
+                                          key={String(
+                                            signal,
+                                          )}
+                                          className="rounded-lg border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[10px] text-slate-500"
+                                        >
+                                          {formatLabel(
+                                            String(
+                                              signal,
+                                            ),
+                                          )}
+                                        </span>
+                                      ),
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ),
+                      )}
                     </div>
                   </section>
                 )}
@@ -1232,7 +1572,9 @@ function CaseAnalysis() {
                         <InfoRow
                           label="Supervisory Dimension"
                           value={stringValue(
-                            detail["supervisory_dimension"] ??
+                            detail[
+                              "supervisory_dimension"
+                            ] ??
                               selectedSummary.supervisory_dimension,
                           )}
                         />
@@ -1241,7 +1583,9 @@ function CaseAnalysis() {
                           label="Fusion Signals"
                           value={String(
                             numberValue(
-                              fusion["fused_signal_count"],
+                              fusion[
+                                "fused_signal_count"
+                              ],
                             ),
                           )}
                         />
@@ -1308,18 +1652,37 @@ function CaseAnalysis() {
   );
 }
 
-function CseMetric({ label, value }: { label: string; value: number }) {
+function CseMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
   return (
     <div className="rounded-xl border border-white/[0.05] bg-black/10 px-2.5 py-2">
-      <div className="text-[9px] uppercase tracking-[0.12em] text-slate-600">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-slate-200">{value.toLocaleString()}</div>
+      <div className="text-[9px] uppercase tracking-[0.12em] text-slate-600">
+        {label}
+      </div>
+
+      <div className="mt-1 text-sm font-semibold text-slate-200">
+        {value.toLocaleString()}
+      </div>
     </div>
   );
 }
 
-function SeverityPill({ label, className }: { label: string; className: string }) {
+function SeverityPill({
+  label,
+  className,
+}: {
+  label: string;
+  className: string;
+}) {
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${className}`}>
+    <span
+      className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${className}`}
+    >
       {label}
     </span>
   );
@@ -1371,23 +1734,21 @@ function Timeline({
   selectedSummary: CaseSummary;
 }) {
   type TimelineItem = {
-  id: string;
-  title: string;
-  description: string;
-  meta: string;
-  source: string;
-  tone: "violet" | "amber" | "sky" | "rose" | "emerald";
-};
+    id: string;
+    title: string;
+    description: string;
+    meta: string;
+    source: string;
+    tone:
+      | "violet"
+      | "amber"
+      | "sky"
+      | "rose"
+      | "emerald";
+  };
 
   const items: TimelineItem[] = [];
 
-  /*
-   * 01 — CASE CREATED
-   *
-   * We always know the selected case itself.
-   * This is not a fabricated event timestamp; it represents
-   * the case context from the analysis response.
-   */
   items.push({
     id: "case-created",
     title: "Case Identified",
@@ -1401,17 +1762,16 @@ function Timeline({
       .join(" · "),
     source: "cases",
     tone:
-      selectedSummary.severity?.toUpperCase() === "CRITICAL"
+      selectedSummary.severity?.toUpperCase() ===
+      "CRITICAL"
         ? "rose"
         : "violet",
   });
 
-  /*
-   * 02 — SIGNALS
-   *
-   * These are real signals returned by /analyze/{case_id}.
-   */
-  for (const [index, signal] of selectedSummary.signals.entries()) {
+  for (const [
+    index,
+    signal,
+  ] of selectedSummary.signals.entries()) {
     const signalCode = stringValue(
       signal["signal_code"],
       "Security Signal",
@@ -1425,7 +1785,9 @@ function Timeline({
     const sourceList = Array.isArray(
       signal["evidence_sources"],
     )
-      ? (signal["evidence_sources"] as unknown[])
+      ? (
+          signal["evidence_sources"] as unknown[]
+        )
           .map((source) => String(source))
           .filter(Boolean)
       : [];
@@ -1453,11 +1815,6 @@ function Timeline({
     });
   }
 
-  /*
-   * 03 — FUSED FINDINGS
-   *
-   * Fusion is already generated by the backend.
-   */
   const fusion = selectedSummary.fusion;
 
   const findings = isRecord(fusion)
@@ -1466,7 +1823,10 @@ function Timeline({
       : []
     : [];
 
-  for (const [index, finding] of findings.entries()) {
+  for (const [
+    index,
+    finding,
+  ] of findings.entries()) {
     const findingType = stringValue(
       finding["finding_type"] ??
         finding["signal_code"],
@@ -1481,7 +1841,11 @@ function Timeline({
     const supportingSignals = Array.isArray(
       finding["supporting_signals"],
     )
-      ? (finding["supporting_signals"] as unknown[])
+      ? (
+          finding[
+            "supporting_signals"
+          ] as unknown[]
+        )
           .map(String)
           .join(" + ")
       : undefined;
@@ -1498,9 +1862,6 @@ function Timeline({
     });
   }
 
-  /*
-   * 04 — CONFIDENCE / ASSESSMENT
-   */
   const confidence = selectedSummary.confidence;
 
   if (isRecord(confidence)) {
@@ -1561,7 +1922,6 @@ function Timeline({
 
   return (
     <div className="relative">
-      {/* vertical timeline rail */}
       <div className="absolute bottom-6 left-[11px] top-6 w-px bg-gradient-to-b from-violet-400/30 via-white/[0.08] to-transparent" />
 
       <div className="space-y-2">
@@ -1570,7 +1930,6 @@ function Timeline({
             key={item.id}
             className="group relative flex gap-5 rounded-2xl p-3 transition hover:bg-white/[0.018]"
           >
-            {/* timeline node */}
             <div className="relative z-10 flex w-6 shrink-0 justify-center pt-4">
               <div
                 className={`h-[10px] w-[10px] rounded-full ring-4 ring-[#080d1d] ${dotClass(
@@ -1579,7 +1938,6 @@ function Timeline({
               />
             </div>
 
-            {/* content */}
             <div className="min-w-0 flex-1 rounded-xl border border-white/[0.05] bg-white/[0.018] p-4 transition group-hover:border-white/[0.09] group-hover:bg-white/[0.025]">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -1601,7 +1959,7 @@ function Timeline({
                 </div>
 
                 <span className="shrink-0 rounded-lg border border-white/[0.05] bg-black/10 px-2.5 py-1 text-[9px] text-slate-600">
-                  {item.source ?? "SAT-SA"}
+                  {item.source}
                 </span>
               </div>
 
@@ -1609,14 +1967,16 @@ function Timeline({
                 <div className="mt-3 flex flex-wrap gap-2">
                   {item.meta
                     .split(" · ")
-                    .map((meta, metaIndex) => (
-                      <span
-                        key={`${item.id}-meta-${metaIndex}`}
-                        className="rounded-lg border border-white/[0.05] bg-black/10 px-2.5 py-1 text-[10px] text-slate-500"
-                      >
-                        {formatLabel(meta)}
-                      </span>
-                    ))}
+                    .map(
+                      (meta, metaIndex) => (
+                        <span
+                          key={`${item.id}-meta-${metaIndex}`}
+                          className="rounded-lg border border-white/[0.05] bg-black/10 px-2.5 py-1 text-[10px] text-slate-500"
+                        >
+                          {formatLabel(meta)}
+                        </span>
+                      ),
+                    )}
                 </div>
               )}
             </div>
