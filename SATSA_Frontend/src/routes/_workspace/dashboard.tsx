@@ -17,6 +17,8 @@ import { useEffect, useState } from "react";
 import {
   analyzeAll,
   checkBackend,
+  setStoredDataset,
+  getStoredDataset,
   type UploadResult,
 } from "@/lib/satsa-api";
 
@@ -69,6 +71,16 @@ function Dashboard() {
     useState<string | null>(null);
 
   useEffect(() => {
+    const storedDataset = getStoredDataset();
+
+  if (storedDataset) {
+    setUploadResult({
+      dataset_status: storedDataset.status,
+      files_available: storedDataset.filesAvailable,
+      files_required: storedDataset.filesRequired,
+      uploaded_files: storedDataset.uploadedFiles,
+    });
+  }
     checkBackend()
       .then(() => setBackend("online"))
       .catch(() => setBackend("offline"));
@@ -107,6 +119,7 @@ function Dashboard() {
         JSON.parse(text) as UploadResult;
 
       setUploadResult(result);
+      setStoredDataset(result);
     } catch (err) {
       setError(
         err instanceof Error

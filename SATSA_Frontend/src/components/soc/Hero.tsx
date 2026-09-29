@@ -1,10 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
-import heroSpace from "@/assets/hero-space.jpg";
+const heroSpace = "/assets/hero-space.jpeg";
 
 export function Hero() {
   return (
-    <div className="relative isolate px-5 pt-36 pb-10 text-center md:pt-44">
+    <div className="relative isolate overflow-hidden px-5 pt-36 pb-40 text-center md:pt-44 md:pb-52">
       <img
         src={heroSpace}
         width={1920}

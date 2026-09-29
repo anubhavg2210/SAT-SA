@@ -12,6 +12,51 @@ export function setToken(t: string | null) {
   if (t) localStorage.setItem(TOKEN_KEY, t);
   else localStorage.removeItem(TOKEN_KEY);
 }
+const DATASET_STORAGE_KEY = "satsa_dataset";
+
+export type StoredDataset = {
+  status: "ready" | "partial" | "invalid";
+  filesAvailable: number;
+  filesRequired: number;
+  uploadedFiles: string[];
+  savedAt: string;
+};
+
+export function getStoredDataset(): StoredDataset | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem(DATASET_STORAGE_KEY);
+    if (!raw) return null;
+
+    return JSON.parse(raw) as StoredDataset;
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredDataset(result: UploadResult) {
+  if (typeof window === "undefined") return;
+
+  const dataset: StoredDataset = {
+    status: result.dataset_status ?? "partial",
+    filesAvailable: result.files_available ?? 0,
+    filesRequired: result.files_required ?? 7,
+    uploadedFiles: result.uploaded_files ?? [],
+    savedAt: new Date().toISOString(),
+  };
+
+  localStorage.setItem(
+    DATASET_STORAGE_KEY,
+    JSON.stringify(dataset),
+  );
+}
+
+export function clearStoredDataset() {
+  if (typeof window === "undefined") return;
+
+  localStorage.removeItem(DATASET_STORAGE_KEY);
+}
 
 export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);

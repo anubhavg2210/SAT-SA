@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
-import ctaHorizon from "@/assets/cta-horizon.jpg";
+const ctaHorizon = "/assets/cta-horizon.jpeg";
 
 export function CTASection() {
   return (

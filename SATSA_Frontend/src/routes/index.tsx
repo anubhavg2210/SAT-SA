@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Navbar } from "@/components/soc/Navbar";
 import { Hero } from "@/components/soc/Hero";
-import { HeroDashboard } from "@/components/soc/HeroDashboard";
+
 import { PlatformSection } from "@/components/soc/PlatformSection";
-import { SatsaPipeline } from "@/components/soc/SatsaPipeline";
+
 import { InvestigationSection } from "@/components/soc/InvestigationSection";
 import { CTASection } from "@/components/soc/CTASection";
 import { Footer } from "@/components/soc/Footer";
@@ -37,10 +37,10 @@ function Landing() {
       <main>
         <div className="relative isolate">
           <Hero />
-          <HeroDashboard />
+          
         </div>
         <PlatformSection />
-        <SatsaPipeline />
+        
         <InvestigationSection />
         <CTASection />
       </main>
